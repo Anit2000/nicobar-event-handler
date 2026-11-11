@@ -2,6 +2,7 @@ import { LogSeverity, shopifyApi } from "@shopify/shopify-api";
 import "@shopify/shopify-api/adapters/node";
 import "dotenv/config";
 import appUninstallHandler from "../server/webhooks/app_uninstalled.js";
+import orderCreateHandler from "../server/webhooks/orderCreateHandler.js";
 
 const isDev = process.env.NODE_ENV === "dev";
 
@@ -35,6 +36,11 @@ shopify = {
         topics: ["app/uninstalled"],
         url: "/api/webhooks/app_uninstalled",
         callback: appUninstallHandler,
+      },
+      {
+        topics: ["orders/create"],
+        url: "/api/webhooks/orders_create",
+        callback: orderCreateHandler,
       },
     ],
     /**

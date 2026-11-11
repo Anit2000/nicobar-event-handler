@@ -20,6 +20,7 @@ import proxyRouter from "./routes/app_proxy/index.js";
 import checkoutRoutes from "./routes/checkout/index.js";
 import userRoutes from "./routes/index.js";
 import webhookHandler from "./webhooks/_index.js";
+import { sqsEventConsumer } from "./controllers/aws.js";
 
 setupCheck(); // Run a check to ensure everything is setup properly
 
@@ -31,6 +32,7 @@ const mongoUrl =
   process.env.MONGO_URL || "mongodb://127.0.0.1:27017/shopify-express-app";
 
 mongoose.connect(mongoUrl);
+sqsEventConsumer();
 
 const createServer = async (root = process.cwd()) => {
   const app = Express();

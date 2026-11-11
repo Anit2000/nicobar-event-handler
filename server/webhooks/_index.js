@@ -14,6 +14,7 @@ import shopRedactHandler from "./gdpr/shop_redact.js";
 
 //WEBHOOK IMPORTS
 import appUninstallHandler from "./app_uninstalled.js";
+import orderCreateHandler from "./orderCreateHandler.js";
 //WEBHOOK IMPORTS END
 
 async function buffer(readable) {
@@ -77,6 +78,15 @@ const webhookHandler = async (req, res) => {
         switch (validateWebhook.topic) {
           case "APP_UNINSTALLED":
             await appUninstallHandler(
+              topic,
+              shop,
+              req.body,
+              webhookId,
+              apiVersion
+            );
+            break;
+          case "ORDERS_CREATE":
+            await orderCreateHandler(
               topic,
               shop,
               req.body,
