@@ -47,7 +47,7 @@ On failure → DLQ → CloudWatch alarm → SNS alert
 
 ### What did I choose not to do, and why?
 
-**Idempotency / deduplication.** Shopify can send the same `orders/create` webhook more than once. The consumer currently processes every message it receives, so three deliveries of the same order would create three OMS entries. The fix is a `processedOrders` collection in MongoDB with a unique index on the Shopify order ID, checked at the top of `handleOrderCreate` before any downstream call. I ran out of time to implement it, but the hook and structure are in place — `handleOrderCreate` in `server/controllers/aws.js` is where it goes.
+**OMS integration.** `handleOrderCreate` in `server/controllers/aws.js` deduplicates, logs, and exits. The function signature, idempotency guard, and error propagation path are all in place — the actual OMS HTTP call is the only missing piece.
 
 **Retry with exponential backoff.** The consumer currently catches a handler failure, forwards the message to the DLQ immediately, and deletes it from the main queue. A better model for transient failures (like a 30-second OMS hiccup) is to let the SQS visibility timeout expire and have AWS retry naturally, only moving to the DLQ after `MaxReceiveCount` attempts. This is configurable on the queue itself and does not require code changes — it just needs the Redrive Policy set correctly, which is documented in `architecture.md`.
 
@@ -55,7 +55,7 @@ On failure → DLQ → CloudWatch alarm → SNS alert
 
 ### What is the weakest part of your submission?
 
-The missing idempotency check. Everything else in the pipeline is durable — the queue survives server restarts, the DLQ catches permanent failures, and the HMAC validation rejects tampered payloads. But if Shopify delivers the same webhook three times (which it will, by design, if the first two responses are slow), all three orders enter the OMS. That is the one gap that could cause real data integrity problems in production.
+The missing OMS call. The idempotency guard, DLQ routing, and consumer loop are all in place. The one gap is that `handleOrderCreate` stubs out the actual OMS POST — so orders are deduplicated and acknowledged correctly but never forwarded downstream. Everything up to that call is production-ready; everything after it is not wired up yet.
 
 ### Where was AI wrong, and how did you catch it?
 

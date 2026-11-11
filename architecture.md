@@ -59,7 +59,7 @@ A fire-and-forget design would call the OMS directly inside the webhook handler,
 If the OMS call fails, the order is gone. Shopify's own retry mechanism will resend the webhook up to 19 times over 48 hours, but this is out of your control — the intervals are fixed, retries happen even if the OMS comes back in five minutes, and there is no hook to trigger an immediate retry once the OMS recovers. With SQS, the message sits safely in the queue with a configurable visibility timeout. The consumer keeps attempting until the OMS responds, then deletes the message.
 
 **2. The same webhook arrives multiple times.**
-Shopify guarantees at-least-once delivery, not exactly-once. Fire-and-forget processes every delivery immediately, so three copies of the same webhook create three orders in the OMS. With a queue-based approach the consumer can check an idempotency store (a MongoDB `processedOrders` set keyed on the Shopify order ID) before forwarding. The current implementation does not yet do this — that is the weakest part noted in the README.
+Shopify guarantees at-least-once delivery, not exactly-once. Fire-and-forget processes every delivery immediately, so three copies of the same webhook create three orders in the OMS. With a queue-based approach the consumer uses a MongoDB idempotency store keyed on the Shopify order ID to deduplicate before forwarding.
 
 **3. One particular order keeps failing.**
 With fire-and-forget there is no way to isolate the bad order — either the entire handler breaks or the error is silently swallowed. With SQS + DLQ, the bad message circulates on the main queue up to `MaxReceiveCount` times, then lands in the DLQ. Everything else keeps processing normally. The DLQ entry preserves the original payload, the failure reason, the original message ID, and the timestamp — enough to debug and replay the order manually.
@@ -72,19 +72,25 @@ With fire-and-forget there is no way to isolate the bad order — either the ent
 
 Each delivery creates a separate SQS message. All three are currently processed.
 
-**Gap:** `handleOrderCreate` in `server/controllers/aws.js` needs an idempotency check:
+`handleOrderCreate` in `server/controllers/aws.js` uses MongoDB's unique index as the idempotency gate. It attempts to insert a record for the order ID; if the insert succeeds the order is new and processing continues; if MongoDB returns a duplicate-key error (`11000`) the order was already handled and the message is skipped silently. Any other error propagates up to `processMessage` and routes to the DLQ as normal.
 
 ```js
 const handleOrderCreate = async (body) => {
-  const { shop, id: orderId } = body;
-  const alreadyProcessed = await ProcessedOrder.exists({ orderId });
-  if (alreadyProcessed) return;           // skip duplicate
-  await ProcessedOrder.create({ orderId });
+  const { shop, ...orderData } = body;
+  try {
+    await ProcessedOrderModel.create({ orderId: String(orderData.id), shop });
+  } catch (err) {
+    if (err.code === 11000) {
+      console.log(`→ Duplicate ORDER_CREATE skipped — order ${orderData.id} already processed`);
+      return;
+    }
+    throw err;
+  }
   // ... forward to OMS
 };
 ```
 
-A MongoDB collection with a unique index on `orderId` and a TTL index (e.g. 7 days) keeps this lightweight. This is noted as the highest-priority follow-up.
+`ProcessedOrderModel` (`utils/models/ProcessedOrderModel.js`) has a unique index on `orderId` and a TTL index (`expires: "7d"`) so records self-delete after a week with no manual cleanup. Using the unique index as the guard rather than a check-then-insert pattern means two concurrent messages for the same order cannot both pass — the second `create` call will always throw `11000`.
 
 ### OMS is unavailable for 30 minutes
 
