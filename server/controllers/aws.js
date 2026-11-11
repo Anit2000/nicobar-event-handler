@@ -1,4 +1,5 @@
 import AWS from "aws-sdk";
+import ProcessedOrderModel from "../../utils/models/ProcessedOrderModel.js";
 
 AWS.config.update({
   region: process.env.AWS_REGION,
@@ -55,14 +56,19 @@ const sendToDLQ = async (message, reason) => {
 // ─── Topic handlers ───────────────────────────────────────────────────────────
 
 const handleOrderCreate = async (body) => {
-    try{
-        const { shop, ...orderData } = body;
-        console.log(`→ Processing ORDER_CREATE for shop: ${shop}, order: ${orderData.id}`);
-        // sending mock data to any third party integration
-        console.log(`✅ ORDER_CREATE processed — shop: ${shop}, order: ${orderData.id}`);
-    }catch(err){
-        throw new Error("❌ Failed to hanlder order create at consumer reason -->" + err.message)
+  const { shop, ...orderData } = body;
+  try {
+    await ProcessedOrderModel.create({ orderId: String(orderData.id), shop });
+  } catch (err) {
+    if (err.code === 11000) {
+      console.log(`→ Duplicate ORDER_CREATE skipped — order ${orderData.id} already processed`);
+      return;
     }
+    throw err;
+  }
+  console.log(`→ Processing ORDER_CREATE for shop: ${shop}, order: ${orderData.id}`);
+  // TODO: forward to OMS
+  console.log(`✅ ORDER_CREATE processed — shop: ${shop}, order: ${orderData.id}`);
 };
 
 // ─── Per-message dispatcher ───────────────────────────────────────────────────
