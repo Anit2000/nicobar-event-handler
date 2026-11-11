@@ -3,6 +3,7 @@
 **Assignment:** Reliable Shopify → Backend → OMS/WMS Order Processing
 **Role:** Senior Full Stack Developer – Backend Focus
 **Start time:** 11th November 2026, 10:16 AM
+**End time:** 11th November 2026, 11:19 AM
 
 ---
 
